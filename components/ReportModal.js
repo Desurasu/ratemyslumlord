@@ -1,6 +1,42 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
+
+// Strip PII and sanitize input
+function sanitize(str) {
+  if (!str) return ''
+  return str
+    // Remove phone numbers
+    .replace(/(\+?1?\s?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/g, '[phone removed]')
+    // Remove emails
+    .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[email removed]')
+    // Remove SSNs
+    .replace(/\d{3}-\d{2}-\d{4}/g, '[removed]')
+    // Strip HTML tags
+    .replace(/<[^>]*>/g, '')
+    // Trim excessive whitespace
+    .trim()
+    .slice(0, 5000)
+}
+
+function validateForm(form) {
+  if (!form.landlord_name.trim() || form.landlord_name.trim().length < 3)
+    return 'Landlord name must be at least 3 characters.'
+  if (form.landlord_name.length > 200)
+    return 'Landlord name is too long.'
+  if (!form.property_address.trim() || form.property_address.trim().length < 5)
+    return 'Please enter a valid property address.'
+  if (form.property_address.length > 300)
+    return 'Address is too long.'
+  if (form.rating < 1 || form.rating > 5)
+    return 'Rating must be between 1 and 5.'
+  if (form.deposit_lost && parseInt(form.deposit_lost) > 99999)
+    return 'Deposit amount seems too high. Please check.'
+  if (form.review_text && form.review_text.length > 5000)
+    return 'Review is too long (max 5000 characters).'
+  return null
+}
+
 const FLAGS = [
   'Deposit withheld',
   'Pet rent + deposit double-dip',
@@ -16,6 +52,7 @@ export default function ReportModal({ onClose, onSuccess }) {
   const [form, setForm] = useState({
     landlord_name: '', property_address: '', city: '', state: '',
     type: 'landlord', rating: 1, review_text: '', deposit_lost: '', flags: [],
+    honeypot: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -48,25 +85,71 @@ export default function ReportModal({ onClose, onSuccess }) {
   }
 
   async function selectAddress(s) {
-    // Parse city/state from display name: "123 Main St, Jacksonville, Duval County, Florida, 32099, United States"
+    // Nominatim US format: "123 Main St, City, County, State, ZIP, United States"
+    // We want: street address (parts 0), city (find non-county, non-zip part), state abbrev
     const parts = s.display.split(',').map(p => p.trim())
-    const city = parts[1] || ''
-    const state = parts[3] || parts[2] || ''
-    setForm(p => ({ ...p, property_address: parts[0], city, state }))
+    
+    const streetAddress = parts[0] || ''
+    
+    // Find state: look for known US state names or abbreviations
+    const US_STATES = {
+      'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+      'Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA',
+      'Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS',
+      'Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA',
+      'Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT',
+      'Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM',
+      'New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK',
+      'Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC',
+      'South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT',
+      'Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY'
+    }
+    
+    let city = ''
+    let state = ''
+    
+    for (let i = 1; i < parts.length; i++) {
+      const p = parts[i]
+      // Skip zip codes, "United States", counties
+      if (/^\d{5}/.test(p) || p === 'United States') continue
+      if (p.toLowerCase().includes('county')) continue
+      
+      // Check if it's a state name
+      if (US_STATES[p]) {
+        state = US_STATES[p]
+        continue
+      }
+      // Check 2-letter state abbrev
+      if (/^[A-Z]{2}$/.test(p)) {
+        state = p
+        continue
+      }
+      // First non-junk part after street = city
+      if (!city && p.length > 1) {
+        city = p
+      }
+    }
+    
+    setForm(p => ({ ...p, property_address: streetAddress, city, state }))
     setSuggestions([])
-    // Check duplicate
-    const { data } = await supabase
-      .from('listings')
-      .select('id, landlord_name, rating, reviews')
-      .ilike('property_address', `%${parts[0]}%`)
-    if (data && data.length > 0) setDuplicate(data[0])
+    
+    // Only check duplicate if we have a real street address (more than 3 chars)
+    if (streetAddress.length > 5) {
+      const { data } = await supabase
+        .from('listings')
+        .select('id, landlord_name, rating, reviews')
+        .ilike('property_address', `%${streetAddress}%`)
+      if (data && data.length > 0) setDuplicate(data[0])
+    }
   }
 
   async function submit() {
-    if (!form.landlord_name.trim() || !form.property_address.trim()) {
-      setError('Landlord name and property address are required.')
-      return
-    }
+    // Honeypot check - bots fill hidden fields
+    if (form.honeypot) return
+
+    const validationError = validateForm(form)
+    if (validationError) { setError(validationError); return }
+
     setLoading(true)
     setError('')
 
@@ -101,14 +184,14 @@ export default function ReportModal({ onClose, onSuccess }) {
     }
 
     const { data: newListing, error: err } = await supabase.from('listings').insert({
-      landlord_name: form.landlord_name.trim(),
-      property_address: form.property_address.trim(),
-      city: form.city.trim(),
-      state: form.state.trim(),
+      landlord_name: sanitize(form.landlord_name),
+      property_address: sanitize(form.property_address),
+      city: sanitize(form.city),
+      state: form.state.toUpperCase().slice(0, 2),
       type: form.type,
       rating: parseFloat(form.rating),
-      review_text: form.review_text.trim(),
-      deposit_lost: form.deposit_lost ? parseInt(form.deposit_lost.replace(/\D/g, '')) : 0,
+      review_text: sanitize(form.review_text),
+      deposit_lost: form.deposit_lost ? Math.min(99999, parseInt(form.deposit_lost.replace(/\D/g, ''))) : 0,
       flags: form.flags,
       reviews: 1,
     }).select()
@@ -244,6 +327,13 @@ export default function ReportModal({ onClose, onSuccess }) {
           </div>
         </div>
 
+
+        {/* Honeypot - hidden from real users */}
+        <div style={{position:'absolute',left:'-9999px',opacity:0,pointerEvents:'none'}} aria-hidden="true">
+          <input tabIndex={-1} autoComplete="off"
+            value={form.honeypot} onChange={e => setForm(p => ({ ...p, honeypot: e.target.value }))}
+            placeholder="Leave this blank" />
+        </div>
         <div className="flex gap-3 mt-6 justify-end">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
           <button onClick={submit} disabled={loading}
