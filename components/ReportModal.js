@@ -70,6 +70,7 @@ export default function ReportModal({ onClose, onSuccess }) {
   function handleAddressChange(val) {
     setForm(p => ({ ...p, property_address: val }))
     setDuplicate(null)
+    if (val.length === 0) setSuggestions([])
     clearTimeout(debounceRef.current)
     if (val.length < 4) { setSuggestions([]); return }
     debounceRef.current = setTimeout(async () => {
@@ -133,8 +134,8 @@ export default function ReportModal({ onClose, onSuccess }) {
     setForm(p => ({ ...p, property_address: streetAddress, city, state }))
     setSuggestions([])
     
-    // Only check duplicate if we have a real street address (more than 3 chars)
-    if (streetAddress.length > 5) {
+    // Only check duplicate after a full address is selected (must have number + street)
+    if (streetAddress.length > 8 && /\d/.test(streetAddress)) {
       const { data } = await supabase
         .from('listings')
         .select('id, landlord_name, rating, reviews')
