@@ -72,10 +72,10 @@ export default function Home({ toggleDark, dark }) {
         <meta property="og:url" content="https://ratemyslumlord.us" />
       </Head>
 
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         {/* Header */}
         <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
             <div>
               <span className="font-bold text-gray-900 text-lg">RateMy</span>
               <span className="font-bold text-brand text-lg">Slumlord</span>
@@ -97,7 +97,7 @@ export default function Home({ toggleDark, dark }) {
 
         {/* Hero */}
         <div className="bg-white border-b border-gray-100">
-          <div className="max-w-3xl mx-auto px-4 py-10 text-center">
+          <div className="max-w-2xl mx-auto px-4 py-10 text-center">
             <h1 className="text-3xl font-bold text-gray-900">Rate your landlord.<br />Warn your neighbors.</h1>
             <p className="text-gray-500 mt-2 text-sm max-w-md mx-auto">The national database of predatory landlords, rental properties, and management companies. Look before you lease.</p>
             <div className="mt-5 flex gap-2 max-w-lg mx-auto">
@@ -116,7 +116,7 @@ export default function Home({ toggleDark, dark }) {
           </div>
         </div>
 
-        <div className="max-w-3xl mx-auto px-4 py-6">
+        <div className="max-w-2xl mx-auto px-4 py-6">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             {[
@@ -132,8 +132,8 @@ export default function Home({ toggleDark, dark }) {
           </div>
 
           {/* Filters row */}
-          <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
               {TABS.map(t => (
                 <button key={t.value} onClick={() => setTab(t.value)}
                   className={`text-sm px-4 py-1.5 rounded-full border whitespace-nowrap transition-colors ${
@@ -141,9 +141,9 @@ export default function Home({ toggleDark, dark }) {
                   }`}>{t.label}</button>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
               <input
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-16 focus:outline-none focus:border-brand uppercase"
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-brand uppercase text-center"
                 placeholder="State"
                 value={stateFilter}
                 onChange={e => setStateFilter(e.target.value.toUpperCase())}
@@ -174,7 +174,7 @@ export default function Home({ toggleDark, dark }) {
 
         {/* Footer */}
         <footer className="border-t border-gray-100 mt-12 py-8">
-          <div className="max-w-3xl mx-auto px-4 text-center text-xs text-gray-400 space-y-2">
+          <div className="max-w-2xl mx-auto px-4 text-center text-xs text-gray-400 space-y-2">
             <p className="font-medium text-gray-500">RateMySlumlord.us</p>
             <p>Reviews are submitted by tenants and reflect their personal experiences. We do not verify individual claims.</p>
             <p className="space-x-4">
