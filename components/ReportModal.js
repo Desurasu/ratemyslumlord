@@ -131,8 +131,8 @@ export default function ReportModal({ onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl my-4" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-xl mx-auto p-4 sm:p-6 shadow-xl my-4 sm:my-8 relative" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-lg font-semibold text-gray-900">Report a landlord or property</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
