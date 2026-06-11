@@ -12,15 +12,16 @@ const FLAG_COLORS = {
 }
 
 function Stars({ rating }) {
-  const r = Math.round(rating)
+  const r = Math.round(parseFloat(rating) || 0)
   return <span className="text-brand text-sm">{'★'.repeat(r)}{'☆'.repeat(5 - r)}</span>
 }
 
 function RatingBar({ rating }) {
-  const color = rating <= 2 ? 'bg-red-500' : rating <= 3 ? 'bg-amber-500' : 'bg-green-500'
+  const r = parseFloat(rating) || 0
+  const color = r <= 2 ? 'bg-red-500' : r <= 3 ? 'bg-amber-500' : 'bg-green-500'
   return (
     <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
-      <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${(rating / 5) * 100}%` }} />
+      <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${(r / 5) * 100}%` }} />
     </div>
   )
 }
