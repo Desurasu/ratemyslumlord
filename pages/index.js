@@ -34,8 +34,9 @@ export default function Home({ toggleDark, dark }) {
     if (tab !== 'all') query = query.eq('type', tab)
     if (stateFilter) query = query.ilike('state', stateFilter)
     if (search.trim()) {
+      const s = search.trim()
       query = query.or(
-        `landlord_name.ilike.%${search.trim()}%,property_address.ilike.%${search.trim()}%,city.ilike.%${search.trim()}%,name.ilike.%${search.trim()}%,address.ilike.%${search.trim()}%`
+        `landlord_name.ilike.%${s}%,property_address.ilike.%${s}%,city.ilike.%${s}%,name.ilike.%${s}%,address.ilike.%${s}%,state.ilike.%${s}%`
       )
     }
 
