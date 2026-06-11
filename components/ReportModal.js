@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const FLAGS = [
@@ -14,13 +14,12 @@ const FLAGS = [
 
 export default function ReportModal({ onClose, onSuccess }) {
   const [form, setForm] = useState({
-    name: '', address: '', type: 'landlord', rating: 1,
-    review_text: '', deposit_lost: '', flags: [],
+    landlord_name: '', property_address: '', city: '', state: '',
+    type: 'landlord', rating: 1, review_text: '', deposit_lost: '', flags: [],
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [suggestions, setSuggestions] = useState([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const [duplicate, setDuplicate] = useState(null)
   const debounceRef = useRef(null)
 
@@ -31,12 +30,11 @@ export default function ReportModal({ onClose, onSuccess }) {
     }))
   }
 
-  // Address autocomplete via Nominatim (free, no API key needed)
   function handleAddressChange(val) {
-    setForm(p => ({ ...p, address: val }))
+    setForm(p => ({ ...p, property_address: val }))
     setDuplicate(null)
     clearTimeout(debounceRef.current)
-    if (val.length < 5) { setSuggestions([]); return }
+    if (val.length < 4) { setSuggestions([]); return }
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
@@ -44,69 +42,92 @@ export default function ReportModal({ onClose, onSuccess }) {
           { headers: { 'Accept-Language': 'en' } }
         )
         const data = await res.json()
-        setSuggestions(data.map(d => d.display_name))
-        setShowSuggestions(true)
+        setSuggestions(data.map(d => ({ display: d.display_name, lat: d.lat, lon: d.lon })))
       } catch { setSuggestions([]) }
     }, 400)
   }
 
-  async function selectAddress(addr) {
-    setForm(p => ({ ...p, address: addr }))
+  async function selectAddress(s) {
+    // Parse city/state from display name: "123 Main St, Jacksonville, Duval County, Florida, 32099, United States"
+    const parts = s.display.split(',').map(p => p.trim())
+    const city = parts[1] || ''
+    const state = parts[3] || parts[2] || ''
+    setForm(p => ({ ...p, property_address: parts[0], city, state }))
     setSuggestions([])
-    setShowSuggestions(false)
-    // Check for duplicate
+    // Check duplicate
     const { data } = await supabase
       .from('listings')
-      .select('id, name, rating, reviews')
-      .ilike('address', `%${addr.split(',')[0]}%`)
-    if (data && data.length > 0) {
-      setDuplicate(data[0])
-    }
+      .select('id, landlord_name, rating, reviews')
+      .ilike('property_address', `%${parts[0]}%`)
+    if (data && data.length > 0) setDuplicate(data[0])
   }
 
   async function submit() {
-    if (!form.name.trim() || !form.address.trim()) {
-      setError('Name and address are required.')
+    if (!form.landlord_name.trim() || !form.property_address.trim()) {
+      setError('Landlord name and property address are required.')
       return
     }
     setLoading(true)
     setError('')
 
-    // Final duplicate check by address
+    // Check for exact duplicate
     const { data: existing } = await supabase
       .from('listings')
-      .select('id, name')
-      .ilike('address', `%${form.address.split(',')[0].trim()}%`)
+      .select('id, reviews, rating, flags, deposit_lost')
+      .ilike('property_address', `%${form.property_address.trim()}%`)
+      .ilike('landlord_name', `%${form.landlord_name.trim()}%`)
 
-    if (existing && existing.length > 0 && existing[0].name.toLowerCase() === form.name.toLowerCase()) {
-      // Update existing instead of inserting
-      const { error: err } = await supabase
-        .from('listings')
-        .update({
-          reviews: existing[0].reviews + 1,
-          flags: form.flags,
-        })
-        .eq('id', existing[0].id)
+    if (existing && existing.length > 0) {
+      const rec = existing[0]
+      const newRating = ((rec.rating * rec.reviews) + parseFloat(form.rating)) / (rec.reviews + 1)
+      const mergedFlags = [...new Set([...(rec.flags || []), ...form.flags])]
+      const addedDeposit = form.deposit_lost ? parseInt(form.deposit_lost.replace(/\D/g, '')) : 0
+      await supabase.from('listings').update({
+        reviews: rec.reviews + 1,
+        rating: Math.round(newRating * 10) / 10,
+        flags: mergedFlags,
+        deposit_lost: (rec.deposit_lost || 0) + addedDeposit,
+      }).eq('id', rec.id)
+      // Insert individual review
+      await supabase.from('reviews').insert({
+        listing_id: rec.id,
+        rating: parseFloat(form.rating),
+        review_text: form.review_text.trim(),
+        deposit_lost: addedDeposit,
+        flags: form.flags,
+      })
       setLoading(false)
-      if (err) { setError('Something went wrong. Try again.'); return }
-      onSuccess()
-      onClose()
-      return
+      onSuccess(); onClose(); return
     }
 
-    const { error: err } = await supabase.from('listings').insert({
-      name: form.name.trim(),
-      address: form.address.trim(),
+    const { data: newListing, error: err } = await supabase.from('listings').insert({
+      landlord_name: form.landlord_name.trim(),
+      property_address: form.property_address.trim(),
+      city: form.city.trim(),
+      state: form.state.trim(),
       type: form.type,
       rating: parseFloat(form.rating),
       review_text: form.review_text.trim(),
       deposit_lost: form.deposit_lost ? parseInt(form.deposit_lost.replace(/\D/g, '')) : 0,
       flags: form.flags,
-    })
+      reviews: 1,
+    }).select()
+
+    if (err) { setError('Something went wrong. Try again.'); setLoading(false); return }
+
+    // Insert first review
+    if (newListing && newListing[0]) {
+      await supabase.from('reviews').insert({
+        listing_id: newListing[0].id,
+        rating: parseFloat(form.rating),
+        review_text: form.review_text.trim(),
+        deposit_lost: form.deposit_lost ? parseInt(form.deposit_lost.replace(/\D/g, '')) : 0,
+        flags: form.flags,
+      })
+    }
+
     setLoading(false)
-    if (err) { setError('Something went wrong. Try again.'); return }
-    onSuccess()
-    onClose()
+    onSuccess(); onClose()
   }
 
   return (
@@ -114,14 +135,14 @@ export default function ReportModal({ onClose, onSuccess }) {
       <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl my-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-lg font-semibold text-gray-900">Report a landlord or property</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+        {error && <p className="text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-lg">{error}</p>}
 
         {duplicate && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
-            ⚠️ <strong>{duplicate.name}</strong> is already listed at this address with {duplicate.reviews} review{duplicate.reviews !== 1 ? 's' : ''}. Your submission will be added to their profile.
+            ⚠️ <strong>{duplicate.landlord_name}</strong> already has {duplicate.reviews} review{duplicate.reviews !== 1 ? 's' : ''} at this address. Your review will be added to their profile.
           </div>
         )}
 
@@ -129,25 +150,24 @@ export default function ReportModal({ onClose, onSuccess }) {
           <div>
             <label className="block text-sm text-gray-500 mb-1">Landlord / management company name *</label>
             <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
-              value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-              placeholder="e.g. Sunrise Property Management" />
+              value={form.landlord_name} onChange={e => setForm(p => ({ ...p, landlord_name: e.target.value }))}
+              placeholder="e.g. Sunrise Property Management or John Smith" />
           </div>
 
           <div className="relative">
             <label className="block text-sm text-gray-500 mb-1">Property address *</label>
             <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
-              value={form.address}
+              value={form.property_address}
               onChange={e => handleAddressChange(e.target.value)}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              placeholder="123 Main St, City, State"
+              placeholder="Start typing an address..."
               autoComplete="off" />
-            {showSuggestions && suggestions.length > 0 && (
-              <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+            {suggestions.length > 0 && (
+              <ul className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
                 {suggestions.map((s, i) => (
                   <li key={i}
                     className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0"
                     onMouseDown={() => selectAddress(s)}>
-                    {s}
+                    {s.display}
                   </li>
                 ))}
               </ul>
@@ -156,11 +176,26 @@ export default function ReportModal({ onClose, onSuccess }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-sm text-gray-500 mb-1">City</label>
+              <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
+                value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))}
+                placeholder="Jacksonville" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">State</label>
+              <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
+                value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))}
+                placeholder="FL" maxLength={2} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-sm text-gray-500 mb-1">Type</label>
               <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
                 value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
-                <option value="landlord">Landlord</option>
-                <option value="property">Property</option>
+                <option value="landlord">Individual landlord</option>
+                <option value="property">Apartment / complex</option>
                 <option value="pm">Mgmt company</option>
               </select>
             </div>
@@ -178,7 +213,7 @@ export default function ReportModal({ onClose, onSuccess }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-500 mb-2">Red flags</label>
+            <label className="block text-sm text-gray-500 mb-2">Red flags (select all that apply)</label>
             <div className="flex flex-wrap gap-2">
               {FLAGS.map(f => (
                 <button key={f} onClick={() => toggleFlag(f)}
@@ -195,14 +230,17 @@ export default function ReportModal({ onClose, onSuccess }) {
             <label className="block text-sm text-gray-500 mb-1">Your experience</label>
             <textarea className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand resize-none h-24"
               value={form.review_text} onChange={e => setForm(p => ({ ...p, review_text: e.target.value }))}
-              placeholder="What happened? Dates, amounts, and specific details help other renters." />
+              placeholder="What happened? Dates, dollar amounts, and specific details help other renters." />
           </div>
 
           <div>
             <label className="block text-sm text-gray-500 mb-1">Deposit amount lost (optional)</label>
-            <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
-              value={form.deposit_lost} onChange={e => setForm(p => ({ ...p, deposit_lost: e.target.value }))}
-              placeholder="e.g. 2950" />
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-sm text-gray-400">$</span>
+              <input className="w-full border border-gray-200 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-brand"
+                value={form.deposit_lost} onChange={e => setForm(p => ({ ...p, deposit_lost: e.target.value }))}
+                placeholder="2950" type="number" />
+            </div>
           </div>
         </div>
 
