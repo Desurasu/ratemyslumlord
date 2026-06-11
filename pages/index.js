@@ -11,7 +11,7 @@ const TABS = [
   { label: 'Mgmt companies', value: 'pm' },
 ]
 
-export default function Home() {
+export default function Home({ toggleDark, dark }) {
   const [listings, setListings] = useState([])
   const [stats, setStats] = useState({ total: 0, reviews: 0, deposits: 0 })
   const [tab, setTab] = useState('all')
@@ -48,9 +48,8 @@ export default function Home() {
     <>
       <Head>
         <title>RateMySlumlord — Rate your landlord. Warn your neighbors.</title>
-        <meta name="description" content="The national database of predatory landlords, properties, and management companies. Read and submit reviews." />
+        <meta name="description" content="The national database of predatory landlords, properties, and management companies." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <div className="min-h-screen bg-gray-50">
@@ -58,21 +57,28 @@ export default function Home() {
         <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
             <div>
-              <span className="font-700 text-gray-900 text-lg">RateMy</span>
-              <span className="font-700 text-brand text-lg">Slumlord</span>
+              <span className="font-bold text-gray-900 text-lg">RateMy</span>
+              <span className="font-bold text-brand text-lg">Slumlord</span>
               <span className="text-gray-400 text-xs">.us</span>
             </div>
-            <button onClick={() => setShowModal(true)}
-              className="bg-brand text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
-              + Report
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={toggleDark}
+                className="text-gray-400 hover:text-gray-600 text-lg px-2 py-1 rounded-lg border border-gray-200"
+                title="Toggle dark mode">
+                {dark ? '☀️' : '🌙'}
+              </button>
+              <button onClick={() => setShowModal(true)}
+                className="bg-brand text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
+                + Report
+              </button>
+            </div>
           </div>
         </header>
 
         {/* Hero */}
         <div className="bg-white border-b border-gray-100">
           <div className="max-w-2xl mx-auto px-4 py-10 text-center">
-            <h1 className="text-3xl font-700 text-gray-900">Rate your landlord.<br />Warn your neighbors.</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Rate your landlord.<br />Warn your neighbors.</h1>
             <p className="text-gray-500 mt-2 text-sm">The national database of predatory landlords, rental properties, and management companies.</p>
             <div className="mt-5 flex gap-2 max-w-md mx-auto">
               <input
@@ -96,10 +102,10 @@ export default function Home() {
             {[
               { label: 'Listings', value: stats.total.toLocaleString() },
               { label: 'Reviews', value: stats.reviews.toLocaleString() },
-              { label: 'Deposits reported lost', value: '$' + stats.deposits.toLocaleString() },
+              { label: 'Deposits lost', value: '$' + stats.deposits.toLocaleString() },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
-                <p className="text-xl font-600 text-gray-900">{s.value}</p>
+                <p className="text-xl font-semibold text-gray-900">{s.value}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
               </div>
             ))}
@@ -130,9 +136,8 @@ export default function Home() {
           )}
         </div>
 
-        {/* FAB mobile */}
         <button onClick={() => setShowModal(true)}
-          className="fixed bottom-6 right-6 bg-brand text-white px-5 py-3 rounded-full text-sm font-500 shadow-lg hover:bg-brand-dark transition-colors md:hidden">
+          className="fixed bottom-6 right-6 bg-brand text-white px-5 py-3 rounded-full text-sm font-medium shadow-lg hover:bg-brand-dark transition-colors md:hidden">
           + Report
         </button>
       </div>

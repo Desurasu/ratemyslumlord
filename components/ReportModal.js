@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const FLAGS = [
@@ -19,12 +19,49 @@ export default function ReportModal({ onClose, onSuccess }) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [duplicate, setDuplicate] = useState(null)
+  const debounceRef = useRef(null)
 
   function toggleFlag(f) {
     setForm(prev => ({
       ...prev,
       flags: prev.flags.includes(f) ? prev.flags.filter(x => x !== f) : [...prev.flags, f],
     }))
+  }
+
+  // Address autocomplete via Nominatim (free, no API key needed)
+  function handleAddressChange(val) {
+    setForm(p => ({ ...p, address: val }))
+    setDuplicate(null)
+    clearTimeout(debounceRef.current)
+    if (val.length < 5) { setSuggestions([]); return }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&countrycodes=us&limit=5`,
+          { headers: { 'Accept-Language': 'en' } }
+        )
+        const data = await res.json()
+        setSuggestions(data.map(d => d.display_name))
+        setShowSuggestions(true)
+      } catch { setSuggestions([]) }
+    }, 400)
+  }
+
+  async function selectAddress(addr) {
+    setForm(p => ({ ...p, address: addr }))
+    setSuggestions([])
+    setShowSuggestions(false)
+    // Check for duplicate
+    const { data } = await supabase
+      .from('listings')
+      .select('id, name, rating, reviews')
+      .ilike('address', `%${addr.split(',')[0]}%`)
+    if (data && data.length > 0) {
+      setDuplicate(data[0])
+    }
   }
 
   async function submit() {
@@ -34,6 +71,29 @@ export default function ReportModal({ onClose, onSuccess }) {
     }
     setLoading(true)
     setError('')
+
+    // Final duplicate check by address
+    const { data: existing } = await supabase
+      .from('listings')
+      .select('id, name')
+      .ilike('address', `%${form.address.split(',')[0].trim()}%`)
+
+    if (existing && existing.length > 0 && existing[0].name.toLowerCase() === form.name.toLowerCase()) {
+      // Update existing instead of inserting
+      const { error: err } = await supabase
+        .from('listings')
+        .update({
+          reviews: existing[0].reviews + 1,
+          flags: form.flags,
+        })
+        .eq('id', existing[0].id)
+      setLoading(false)
+      if (err) { setError('Something went wrong. Try again.'); return }
+      onSuccess()
+      onClose()
+      return
+    }
+
     const { error: err } = await supabase.from('listings').insert({
       name: form.name.trim(),
       address: form.address.trim(),
@@ -50,14 +110,20 @@ export default function ReportModal({ onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl my-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
-          <h2 className="text-lg font-600 text-gray-900">Report a landlord or property</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Report a landlord or property</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+
+        {duplicate && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
+            ⚠️ <strong>{duplicate.name}</strong> is already listed at this address with {duplicate.reviews} review{duplicate.reviews !== 1 ? 's' : ''}. Your submission will be added to their profile.
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -66,12 +132,28 @@ export default function ReportModal({ onClose, onSuccess }) {
               value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
               placeholder="e.g. Sunrise Property Management" />
           </div>
-          <div>
+
+          <div className="relative">
             <label className="block text-sm text-gray-500 mb-1">Property address *</label>
             <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
-              value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
-              placeholder="123 Main St, City, State" />
+              value={form.address}
+              onChange={e => handleAddressChange(e.target.value)}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              placeholder="123 Main St, City, State"
+              autoComplete="off" />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                {suggestions.map((s, i) => (
+                  <li key={i}
+                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0"
+                    onMouseDown={() => selectAddress(s)}>
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-500 mb-1">Type</label>
@@ -94,6 +176,7 @@ export default function ReportModal({ onClose, onSuccess }) {
               </select>
             </div>
           </div>
+
           <div>
             <label className="block text-sm text-gray-500 mb-2">Red flags</label>
             <div className="flex flex-wrap gap-2">
@@ -107,12 +190,14 @@ export default function ReportModal({ onClose, onSuccess }) {
               ))}
             </div>
           </div>
+
           <div>
             <label className="block text-sm text-gray-500 mb-1">Your experience</label>
             <textarea className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand resize-none h-24"
               value={form.review_text} onChange={e => setForm(p => ({ ...p, review_text: e.target.value }))}
               placeholder="What happened? Dates, amounts, and specific details help other renters." />
           </div>
+
           <div>
             <label className="block text-sm text-gray-500 mb-1">Deposit amount lost (optional)</label>
             <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
