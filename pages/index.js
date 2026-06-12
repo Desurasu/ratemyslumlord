@@ -109,7 +109,7 @@ export default function Home({ toggleDark, dark }) {
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand bg-gray-50 placeholder-gray-400"
                 placeholder="Search by name, address, or city..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => { setSearch(e.target.value); if (!e.target.value) setTimeout(fetchListings, 100) }}
                 onKeyDown={e => e.key === 'Enter' && fetchListings()}
               />
               <button onClick={fetchListings}
