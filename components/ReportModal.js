@@ -90,7 +90,17 @@ export default function ReportModal({ onClose, onSuccess }) {
     // We want: street address (parts 0), city (find non-county, non-zip part), state abbrev
     const parts = s.display.split(',').map(p => p.trim())
     
-    const streetAddress = parts[0] || ''
+    // Nominatim sometimes puts house number as parts[0] and street as parts[1]
+    // e.g. "3, Willowood Drive, City..." -> join them
+    let streetAddress = ''
+    let startIdx = 0
+    if (parts[0] && /^\d+[A-Za-z]?$/.test(parts[0]) && parts[1]) {
+      streetAddress = `${parts[0]} ${parts[1]}`
+      startIdx = 2
+    } else {
+      streetAddress = parts[0] || ''
+      startIdx = 1
+    }''
     
     // Find state: look for known US state names or abbreviations
     const US_STATES = {
@@ -109,7 +119,7 @@ export default function ReportModal({ onClose, onSuccess }) {
     let city = ''
     let state = ''
     
-    for (let i = 1; i < parts.length; i++) {
+    for (let i = startIdx; i < parts.length; i++) {
       const p = parts[i]
       // Skip zip codes, "United States", counties
       if (/^\d{5}/.test(p) || p === 'United States') continue
@@ -185,6 +195,8 @@ export default function ReportModal({ onClose, onSuccess }) {
     }
 
     const { data: newListing, error: err } = await supabase.from('listings').insert({
+      name: sanitize(form.landlord_name),
+      address: sanitize(form.property_address),
       landlord_name: sanitize(form.landlord_name),
       property_address: sanitize(form.property_address),
       city: sanitize(form.city),
