@@ -133,7 +133,7 @@ export default function Home({ toggleDark, dark }) {
 
           {/* Filters row */}
           <div className="flex flex-col sm:flex-row gap-2 mb-4">
-            <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
+            <div className="flex gap-2 overflow-x-auto flex-1 scrollbar-hide">
               {TABS.map(t => (
                 <button key={t.value} onClick={() => setTab(t.value)}
                   className={`text-sm px-4 py-1.5 rounded-full border whitespace-nowrap transition-colors ${
