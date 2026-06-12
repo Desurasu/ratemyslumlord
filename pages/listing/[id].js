@@ -68,9 +68,14 @@ export default function ListingDetail({ toggleDark, dark }) {
     }
   }
 
-  function handleSuccess() {
-    // Reload
-    router.replace(router.asPath)
+  async function handleSuccess() {
+    // Refetch data without full page reload
+    const [{ data: l }, { data: r }] = await Promise.all([
+      supabase.from('listings').select('*').eq('id', id).single(),
+      supabase.from('reviews').select('*').eq('listing_id', id).order('created_at', { ascending: false }),
+    ])
+    setListing(l)
+    setReviews(r || [])
   }
 
   if (loading) return (
