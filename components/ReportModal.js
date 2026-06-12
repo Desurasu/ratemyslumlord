@@ -56,6 +56,7 @@ export default function ReportModal({ onClose, onSuccess }) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
   const [suggestions, setSuggestions] = useState([])
   const [duplicate, setDuplicate] = useState(null)
   const debounceRef = useRef(null)
@@ -164,12 +165,12 @@ export default function ReportModal({ onClose, onSuccess }) {
     setLoading(true)
     setError('')
 
-    // Check for exact duplicate
+    // Check for duplicate - match on address first, then verify landlord name similarity
+    const addrKey = form.property_address.trim().toLowerCase().split(',')[0]
     const { data: existing } = await supabase
       .from('listings')
-      .select('id, reviews, rating, flags, deposit_lost')
-      .ilike('property_address', `%${form.property_address.trim()}%`)
-      .ilike('landlord_name', `%${form.landlord_name.trim()}%`)
+      .select('id, reviews, rating, flags, deposit_lost, landlord_name')
+      .ilike('property_address', `%${addrKey}%`)
 
     if (existing && existing.length > 0) {
       const rec = existing[0]
@@ -191,7 +192,9 @@ export default function ReportModal({ onClose, onSuccess }) {
         flags: form.flags,
       })
       setLoading(false)
-      onSuccess(); onClose(); return
+      setSuccess(true)
+      setTimeout(() => { onSuccess(); onClose() }, 1200)
+      return
     }
 
     const { data: newListing, error: err } = await supabase.from('listings').insert({
@@ -200,7 +203,7 @@ export default function ReportModal({ onClose, onSuccess }) {
       landlord_name: sanitize(form.landlord_name),
       property_address: sanitize(form.property_address),
       city: sanitize(form.city),
-      state: form.state.toUpperCase().slice(0, 2),
+      state: (form.state || '').toUpperCase().slice(0, 2),
       type: form.type,
       rating: parseFloat(form.rating),
       review_text: sanitize(form.review_text),
@@ -223,7 +226,8 @@ export default function ReportModal({ onClose, onSuccess }) {
     }
 
     setLoading(false)
-    onSuccess(); onClose()
+    setSuccess(true)
+    setTimeout(() => { onSuccess(); onClose() }, 1200)
   }
 
   return (
@@ -234,6 +238,7 @@ export default function ReportModal({ onClose, onSuccess }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
+        {success && <p className="text-green-700 text-sm mb-4 bg-green-50 p-3 rounded-lg font-medium">✓ Review submitted! Thank you.</p>}
         {error && <p className="text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-lg">{error}</p>}
 
         {duplicate && (
