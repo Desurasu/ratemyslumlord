@@ -27,3 +27,12 @@ body { font-family: 'Inter', system-ui, sans-serif; }
 .dark .bg-red-50 { background-color: #2d1515 !important; }
 .dark .bg-orange-50 { background-color: #2d1a0e !important; }
 .dark .bg-amber-50 { background-color: #2d2010 !important; }
+
+/* Hide scrollbars but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
