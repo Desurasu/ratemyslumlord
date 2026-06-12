@@ -51,7 +51,7 @@ const FLAGS = [
 export default function ReportModal({ onClose, onSuccess }) {
   const [form, setForm] = useState({
     landlord_name: '', property_address: '', city: '', state: '',
-    type: 'landlord', rating: 1, review_text: '', deposit_lost: '', flags: [],
+    type: 'landlord', rating: 1, review_text: '', deposit_lost: '', unit_number: '', flags: [],
     honeypot: '',
   })
   const [loading, setLoading] = useState(false)
@@ -189,6 +189,7 @@ export default function ReportModal({ onClose, onSuccess }) {
         rating: parseFloat(form.rating),
         review_text: form.review_text.trim(),
         deposit_lost: addedDeposit,
+        unit_number: form.unit_number.trim() || null,
         flags: form.flags,
       })
       setLoading(false)
@@ -221,6 +222,7 @@ export default function ReportModal({ onClose, onSuccess }) {
         rating: parseFloat(form.rating),
         review_text: form.review_text.trim(),
         deposit_lost: form.deposit_lost ? parseInt(form.deposit_lost.replace(/\D/g, '')) : 0,
+        unit_number: form.unit_number.trim() || null,
         flags: form.flags,
       })
     }
@@ -275,7 +277,13 @@ export default function ReportModal({ onClose, onSuccess }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">Unit # (optional)</label>
+              <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
+                value={form.unit_number} onChange={e => setForm(p => ({ ...p, unit_number: e.target.value }))}
+                placeholder="e.g. 4B" />
+            </div>
             <div>
               <label className="block text-sm text-gray-500 mb-1">City</label>
               <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
