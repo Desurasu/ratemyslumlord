@@ -17,6 +17,8 @@ const SORTS = [
   { label: 'Newest', value: 'created_at' },
 ]
 
+const PAGE_SIZE = 20
+
 export default function Home({ toggleDark, dark }) {
   const [listings, setListings] = useState([])
   const [stats, setStats] = useState({ total: 0, reviews: 0, deposits: 0 })
@@ -26,10 +28,15 @@ export default function Home({ toggleDark, dark }) {
   const [stateFilter, setStateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
 
-  const fetchListings = useCallback(async () => {
+  const fetchListings = useCallback(async (p = 0) => {
     setLoading(true)
-    let query = supabase.from('listings').select('*')
+    const from = p * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
+    let query = supabase.from('listings').select('*', { count: 'exact' })
     if (tab !== 'all') query = query.eq('type', tab)
     if (stateFilter) query = query.ilike('state', stateFilter)
     if (search.trim()) {
@@ -38,9 +45,11 @@ export default function Home({ toggleDark, dark }) {
         `landlord_name.ilike.%${s}%,property_address.ilike.%${s}%,city.ilike.%${s}%,name.ilike.%${s}%,address.ilike.%${s}%,state.ilike.%${s}%`
       )
     }
-    query = query.order(sort, { ascending: sort === 'rating' })
-    const { data } = await query.limit(50)
+    query = query.order(sort, { ascending: sort === 'rating' }).range(from, to)
+    const { data, count } = await query
     setListings(data || [])
+    setTotalCount(count || 0)
+    setPage(p)
     setLoading(false)
   }, [tab, sort, search, stateFilter])
 
@@ -54,10 +63,12 @@ export default function Home({ toggleDark, dark }) {
     })
   }
 
-  useEffect(() => { fetchListings() }, [fetchListings])
+  useEffect(() => { fetchListings(0) }, [fetchListings])
   useEffect(() => { fetchStats() }, [])
 
-  function handleSuccess() { fetchListings(); fetchStats() }
+  function handleSuccess() { fetchListings(0); fetchStats() }
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
   return (
     <>
@@ -71,7 +82,6 @@ export default function Home({ toggleDark, dark }) {
       </Head>
 
       <div className="min-h-screen bg-gray-50">
-
         {/* Header */}
         <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
           <div className="max-w-2xl mx-auto px-5 h-14 flex items-center justify-between">
@@ -109,10 +119,10 @@ export default function Home({ toggleDark, dark }) {
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand bg-gray-50 placeholder-gray-400"
                 placeholder="Search by name, address, or city..."
                 value={search}
-                onChange={e => { setSearch(e.target.value); if (!e.target.value) setTimeout(fetchListings, 100) }}
-                onKeyDown={e => e.key === 'Enter' && fetchListings()}
+                onChange={e => { setSearch(e.target.value); if (!e.target.value) setTimeout(() => fetchListings(0), 100) }}
+                onKeyDown={e => e.key === 'Enter' && fetchListings(0)}
               />
-              <button onClick={fetchListings}
+              <button onClick={() => fetchListings(0)}
                 className="bg-brand text-white px-5 py-3 rounded-xl text-sm hover:bg-brand-dark transition-colors font-medium whitespace-nowrap">
                 Search
               </button>
@@ -121,13 +131,12 @@ export default function Home({ toggleDark, dark }) {
         </div>
 
         <div className="max-w-2xl mx-auto px-5 py-6">
-
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             {[
               { label: 'Listings', value: stats.total.toLocaleString() },
               { label: 'Reviews', value: stats.reviews.toLocaleString() },
-              { label: 'Deposits lost', value: stats.deposits > 0 ? '$' + stats.deposits.toLocaleString() : '$0' },
+              { label: 'Deposits lost', value: '$' + stats.deposits.toLocaleString() },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
                 <p className="text-2xl font-bold text-gray-900 tabular-nums">{s.value}</p>
@@ -164,6 +173,13 @@ export default function Home({ toggleDark, dark }) {
             </div>
           </div>
 
+          {/* Results count */}
+          {!loading && totalCount > 0 && (
+            <p className="text-xs text-gray-400 mb-3">
+              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount.toLocaleString()} listing{totalCount !== 1 ? 's' : ''}
+            </p>
+          )}
+
           {/* Listings */}
           {loading ? (
             <div className="text-center py-16 text-gray-300 text-sm">Loading...</div>
@@ -177,6 +193,44 @@ export default function Home({ toggleDark, dark }) {
           ) : (
             <div className="space-y-3">
               {listings.map(l => <ListingCard key={l.id} listing={l} />)}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <button
+                onClick={() => fetchListings(page - 1)}
+                disabled={page === 0}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-xl bg-white text-gray-600 hover:border-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                ← Prev
+              </button>
+              <div className="flex gap-1">
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  // Show pages around current page
+                  let p
+                  if (totalPages <= 7) p = i
+                  else if (page < 4) p = i
+                  else if (page > totalPages - 5) p = totalPages - 7 + i
+                  else p = page - 3 + i
+                  return (
+                    <button key={p} onClick={() => fetchListings(p)}
+                      className={`w-9 h-9 text-sm rounded-xl border transition-colors ${
+                        p === page
+                          ? 'bg-brand text-white border-brand'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      }`}>
+                      {p + 1}
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                onClick={() => fetchListings(page + 1)}
+                disabled={page >= totalPages - 1}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-xl bg-white text-gray-600 hover:border-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                Next →
+              </button>
             </div>
           )}
         </div>
@@ -199,7 +253,6 @@ export default function Home({ toggleDark, dark }) {
           </div>
         </footer>
 
-        {/* Mobile FAB */}
         <button onClick={() => setShowModal(true)}
           className="fixed bottom-6 right-6 bg-brand text-white px-5 py-3 rounded-full text-sm font-medium shadow-lg hover:bg-brand-dark transition-colors md:hidden">
           + Report
